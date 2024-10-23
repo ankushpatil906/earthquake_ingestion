@@ -1,30 +1,31 @@
+from datetime import datetime
+
 from pyspark.sql import SparkSession
-from util import create_bucket, load_api_data_to_gcs_bucket, read_data_from_gcs_bucket
+from pyspark.sql.functions import split, col
+
+from util import create_bucket, load_api_data_to_gcs_bucket, read_data_from_gcs_bucket, flatten_data_and_transform_data_to_df
 
 if __name__ == '__main__':
-    # Initialize Spark session for further processing or analysis of data.
-    # SparkSession is required when working with large-scale data processing using PySpark.
     spark = SparkSession.builder.appName('earthquake.com').getOrCreate()
 
     # Define parameters
-    bucket_name = "eartquake_analysis"  # GCS bucket name where data will be stored.
-    project_id = "bwt-learning-2024-431809"  # Google Cloud Project ID.
-    api_url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_month.geojson"  # API endpoint to fetch earthquake data (example API).
-    destination_file_name = "pyspark/landing/20241019.json"  # File path inside the GCS bucket where the data will be stored.
-    file_path = "gs://eartquake_analysis/pyspark/landing/20241019.json"  # Full GCS path to the file.
-
-    # Step 1: Create a GCS bucket if it doesn't already exist.
-    # This function checks for the existence of the bucket and creates it if needed.
+    bucket_name = "eartquake_analysis"
+    project_id = "bwt-learning-2024-431809"
+    api_url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_month.geojson"
+    destination_file_name = "pyspark/landing/20241019.json"
+    current_date = datetime.now().strftime("%Y%m%d")  # Format the date as YYYYMMDD
+    # Step 1: Create a GCS bucket if it doesn't exist
     create_bucket(bucket_name, project_id)
 
-    # Step 2: Load the data from the API and save it to the GCS bucket.
-    # This function fetches earthquake data from the API, converts it to JSON format, and uploads it to the GCS bucket.
+    # Step 2: Load data from the API and save to the GCS bucket
     load_api_data_to_gcs_bucket(api_url, bucket_name, destination_file_name)
 
-    # Step 3: Read the data back from the GCS bucket.
-    # This function downloads the file from GCS, reads it as a string, parses the JSON data, and returns it as a Python object.
+    # Step 3: Read data from the GCS bucket
     gcs_data = read_data_from_gcs_bucket(bucket_name, destination_file_name)
 
-    # Step 4: Print the data retrieved from GCS (this is for verification or debugging purposes).
-    # This will display the earthquake data fetched from the API and stored in GCS.
-    print(gcs_data)
+    # Step 4: Transform the JSON data into a PySpark DataFrame
+    df = flatten_data_and_transform_data_to_df(spark, json_data=gcs_data)
+
+    # Step 5: Show the DataFrame schema and data
+    df.printSchema()
+    df.show(truncate=False)
