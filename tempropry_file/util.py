@@ -1,38 +1,44 @@
+import os
 from datetime import datetime
 from google.cloud import storage
 import requests
 import json
-from pyspark.sql.functions import col, explode, udf, split, current_timestamp
-from pyspark.sql.types import StructType, StructField, StringType, LongType, DoubleType, ArrayType, IntegerType, FloatType
+from pyspark.sql.functions import col, split, current_timestamp
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, FloatType
 
 # Initialize GCS client
-client = storage.Client.from_service_account_json(
-    r"C:\Users\Ankush\PycharmProjects\GCP_Session\bwt-learning-2024-431809-feb13ad022c2.json"
-)
+# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = r'./bwt-learning-2024-431809-a14e88a78b4e.json'
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] =r"C:\Users\Ankush\PycharmProjects\GCP_Session\bwt-project-2024-440809-f03da00f7efa.json"
+client = storage.Client()
 
 
 # Create GCS bucket
 def create_bucket(bucket_name, project_id):
+    client=storage.Client()
     bucket = client.bucket(bucket_name)
     if not bucket.exists():
-        client.create_bucket(bucket, project=project_id)
-        print(f"Bucket '{bucket_name}' created successfully.")
+        client.create_bucket(bucket, project=project_id,location='asia-east1')
+        print(f"Bucket '{bucket_name}' created successfully in the asia-east1 region.")
     else:
         print(f"Bucket '{bucket_name}' already exists.")
 
-
+# Load API data into GCS bucket
 def load_api_data_to_gcs_bucket(api_url, bucket_name, destination_file_name):
     api_response = requests.get(api_url)
+    print('error suru 1')
     if api_response.status_code == 200:
+        print('error suru 2')
         api_data = api_response.json()
         bucket = client.bucket(bucket_name)
         blob = bucket.blob(destination_file_name)
+
         blob.upload_from_string(json.dumps(api_data), content_type='application/json')
+
         print(f"Data loaded to GCS at gs://{bucket_name}/{destination_file_name}")
     else:
         print(f"Failed to fetch data from the API. Status code: {api_response.status_code}")
 
-
+# Read data from GCS bucket
 def read_data_from_gcs_bucket(bucket_name, source_file_name):
     client = storage.Client()
     bucket = client.bucket(bucket_name)
@@ -41,34 +47,13 @@ def read_data_from_gcs_bucket(bucket_name, source_file_name):
     data = json.loads(source_data)
     return data
 
-
-# Helper function to convert epoch time
+# Helper function to convert epoch time to timestamp
 def convert_epoch_to_timestamp(epoch_time):
     if epoch_time:
         return datetime.utcfromtimestamp(epoch_time / 1000).strftime('%Y-%m-%d %H:%M:%S')
     return None
 
-
-# Function to extract area from place
-# Function to extract area from place
-# def extract_area_from_place(place):
-#     """
-#     Extract the area from the 'place' column.
-#     The assumption is that the main area is the part after the first occurrence of 'of'.
-#     If no 'of' is found, return the entire place.
-#     """
-#     if place and 'of' in place:
-#         # Split by 'of' and return the part after the first occurrence of 'of'
-#         location_part = place.split('of')[1].strip()  # Get the part after 'of'
-#
-#         # Further split by comma to extract the primary area name
-#         return location_part.split(',')[1].strip()  # Take the part before the first comma
-#     return place  # If no 'of' is found, return the original place
-#
-# # Register the function as a PySpark UDF
-# extract_area_udf = udf(extract_area_from_place, StringType())
-
-
+# Function to transform and flatten data into PySpark DataFrame
 def flatten_data_and_transform_data_to_df(spark, json_data):
     features = json_data.get("features", [])
     flatten_data = []
@@ -149,11 +134,26 @@ def flatten_data_and_transform_data_to_df(spark, json_data):
     ])
 
     df = spark.createDataFrame(flatten_data, schema=schema)
+    return df
 
-    # Add the new 'area' column using the UDF
-    area_df=df.withColumn("area", split(col("place"), " of").getItem(1))
+# Function to add 'area' column to the DataFrame
+def add_column_area(df):
+    add_column_area_df = df.withColumn("area", split(col("place"), "of").getItem(1))
+    return add_column_area_df
 
-    # Add the 'insert_dt' column with current timestamp
-    insert_col_df= area_df.withColumn("insert_dt", current_timestamp())
+# Function to add 'insert_dt' column (current timestamp) to DataFrame
+def add_insert_dt(df):
+    return df.withColumn("insert_dt", current_timestamp())
 
-    return insert_col_df
+# Function to write DataFrame to GCS as JSON
+# def write_df_to_gcs_as_json(df, bucket_name, output_path):
+#
+#     try:
+#         df.write.mode('overwrite').json(output_path)
+#         print(f"Data successfully written to GCS at {output_path}")
+#     except Exception as e:
+#         print(f"Error writing data to GCS: {e}")
+
+
+
+
